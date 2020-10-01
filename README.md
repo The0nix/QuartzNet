@@ -1,2 +1,2 @@
 # QuartzNet
-Implementation of QuartzNet ASR model in Pytorch
+Implementation of QuartzNet ASR model in PyTorch
