@@ -1,0 +1,46 @@
+common:
+  seed: 1337
+model:
+  channels: [256, 256, 512, 512, 512]
+  kernels: [33, 39, 51, 63, 75]
+  repeats: [5, 5, 5, 5, 5]
+data:
+  path: "data"
+  train_size: 0.95
+preprocessing:
+  sample_rate: 16000
+  f_min: 0
+  f_max: 8000
+  n_fft: 512
+  n_mels: 64
+training:
+  n_epochs: 100
+  lr: 1e-4
+  num_workers: 4
+  batch_size: 32
+waveform_transforms:
+  - _target_: transforms.ToNumpy
+  - _target_: transforms.Squeeze
+  - _target_: audiomentations.AddGaussianNoise
+    min_amplitude: 0.001
+    max_amplitude: 0.015
+    p: 0.5
+  - _target_: audiomentations.TimeStretch
+    min_rate: 0.8
+    max_rate: 1.25
+    p: 0.5
+  - _target_: audiomentations.PitchShift
+    min_semitones: -4
+    max_semitones: 4
+    p: 0.5
+  - _target_: transforms.MelSpectrogram
+    sample_rate: ${preprocessing.sample_rate}
+    f_min: ${preprocessing.f_min}
+    f_max: ${preprocessing.f_max}
+    n_fft: ${preprocessing.n_fft}
+    n_mels: ${preprocessing.n_mels}
+  - _target_: transforms.LogTransform
+bpe:
+  vocab_size: 5000
+  train_data_path: "bpe_data.txt"
+  model_path: "bpe-${bpe.vocab_size}.model"

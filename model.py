@@ -18,10 +18,10 @@ class QuartzBlock(nn.Module):
         self.blocks = nn.ModuleList([
             nn.ModuleList([
                 # TODO: Is this really "time-channel separable conv"?
-                nn.Conv1d(C_in if i == 0 else C, C, # C_in inputs for first, C for others
+                nn.Conv1d(C_in if i == 0 else C, C,      # C_in inputs for first, C for others
                           kernel_size=K,
-                          groups=C_in if i == 0 else C,
-                          padding=(K - 1) // 2),
+                          groups=C_in if i == 0 else C,  # same
+                          padding=K // 2),
                 nn.Conv1d(C, C, kernel_size=1),
                 nn.BatchNorm1d(C),
                 nn.ReLU(),
@@ -50,22 +50,24 @@ class QuartzNet(nn.Module):
     """
     QuartzNet ASR model combining QuartzBlocks and CTC
     :param C_in: number of input channels
-    :param S: iterable of 5 values designating repetitions of each B_i block or integer if all repetitions are the same
+    :param Ss: iterable of 5 values designating repetitions of each B_i block or integer if all repetitions are the same
+    :param Cs: Output channels in blocks
+    :param Ks: Kernel sizes in blocks
+    :param Rs: Number of repetitions inside of each block
     :param n_labels: number of output labels
     """
-    def __init__(self, C_in, Ss: Union[Collection, int], n_labels) -> None:
+    def __init__(self, C_in, n_labels: int, Cs: Collection, Ks: Collection, Rs: Collection,
+                 Ss: Union[Collection, int]) -> None:
         super().__init__()
-        assert isinstance(Ss, int) or len(Ss) == 5
+        assert isinstance(Ss, int) or len(Ss) == 5, "Ss must be an int or collection of length 5"
+        assert len(Cs) == 5, "Cs must be a collection of length 5"
+        assert len(Ks) == 5, "Cs must be a collection of length 5"
+        assert len(Rs) == 5, "Cs must be a collection of length 5"
         if isinstance(Ss, int):
             Ss = [Ss] * 5
 
-        # TODO: put all parameters into some config
-        Cs = [256, 256, 512, 512, 512]  # Output channels in blocks
-        Ks = [33, 39, 51, 63, 75]       # Kernel sizes in blocks
-        Rs = [5, 5, 5, 5, 5]            # Number of repetitions inside of each block
-
         self.C1 = nn.Sequential(
-            nn.Conv1d(C_in, 256, kernel_size=33, padding=(33 - 1) // 2),
+            nn.Conv1d(C_in, 256, kernel_size=33, padding=33 // 2),
             nn.BatchNorm1d(256),
             nn.ReLU()
         )
@@ -79,7 +81,7 @@ class QuartzNet(nn.Module):
         )
 
         self.C2 = nn.Sequential(
-            nn.Conv1d(512, 512, kernel_size=87, padding=(87 - 1) // 2),
+            nn.Conv1d(512, 512, kernel_size=87, padding=87 // 2),
             nn.BatchNorm1d(512),
             nn.ReLU()
         )
