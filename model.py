@@ -100,4 +100,4 @@ class QuartzNet(nn.Module):
         x = self.C2(x)
         x = self.C3(x)
         x = self.C4(x)
-        return x.log_softmax(axis=1)
+        return x.log_softmax(dim=1)

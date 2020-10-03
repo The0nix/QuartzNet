@@ -47,7 +47,7 @@ def train(cfg: DictConfig):
     fix_seeds()
 
     device = torch.device(cfg.training.device)
-    quartznet = model.QuartzNet(C_in=cfg.preprocessing.n_mels, n_labels=cfg.bpe.vocab_size,
+    quartznet = model.QuartzNet(C_in=cfg.preprocessing.n_mels, n_labels=cfg.bpe.vocab_size+1,
                                 Cs=cfg.model.channels,
                                 Ks=cfg.model.kernels,
                                 Rs=cfg.model.repeats, Ss=5).to(device)
@@ -60,7 +60,7 @@ def train(cfg: DictConfig):
     train_idx, test_idx = datasets.get_split(dataset, train_size=cfg.data.train_size, random_state=cfg.common.seed)
 
     optimizer = torch.optim.Adam(quartznet.parameters(), lr=cfg.training.lr)
-    criterion = nn.CTCLoss()
+    criterion = nn.CTCLoss(blank=cfg.bpe.vocab_size)
 
     train_dataloader = torchdata.DataLoader(dataset,
                                             num_workers=cfg.training.num_workers,
@@ -74,31 +74,29 @@ def train(cfg: DictConfig):
                                            sampler=torchdata.sampler.SubsetRandomSampler(test_idx))
 
     wandb.init(project=cfg.wandb.project)
-    wandb.watch(quartznet)
+    wandb.watch(quartznet, log="all", log_freq=cfg.wandb.log_interval)
     for epoch in trange(cfg.training.n_epochs, desc="Epoch"):
         for batch_idx, batch in enumerate(tqdm(train_dataloader, desc="Batch", leave=False)):
             spectrograms, sample_rates, utterances, speaker_ids, chapter_ids, utterance_ids = batch
 
-            input_lengths = [len(spectrogram) for spectrogram in spectrograms]
-            target_lengths = [len(utterance) for utterance in utterances]
+            input_lengths = torch.tensor([spectrogram.shape[1] for spectrogram in spectrograms])
+            target_lengths = torch.tensor([utterance.shape[0] for utterance in utterances])
 
             utterances = nn.utils.rnn.pad_sequence(utterances, batch_first=True).to(device)
             spectrograms = nn.utils.rnn.pad_sequence([s.transpose(0, 1) for s in spectrograms], batch_first=True).to(device)
             spectrograms = spectrograms.transpose(1, 2)
 
-            logprobs = quartznet(spectrograms).transpose(0, 1)
+            logprobs = quartznet(spectrograms).permute(2, 0, 1)
             loss = criterion(logprobs, utterances, input_lengths, target_lengths)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             if batch_idx % cfg.wandb.log_interval == 0:
-                wandb.log({"train_loss": loss})
+                wandb.log({"train_loss": loss.item()})
 
-
-    import matplotlib.pyplot as plt
-    plt.imshow(dataset[0][0])
-    plt.show()
+            # TODO: Add model saving
+            # TODO: Add validation with WER
 
 
 if __name__ == "__main__":
