@@ -3,6 +3,7 @@ from typing import Union
 import numpy as np
 import torch
 import torchaudio
+import youtokentome as yttm
 
 
 class MelSpectrogram(torchaudio.transforms.MelSpectrogram):
@@ -14,6 +15,22 @@ class MelSpectrogram(torchaudio.transforms.MelSpectrogram):
 
     def forward(self, samples: Union[np.ndarray, torch.Tensor], sample_rate: int) -> torch.Tensor:
         return super(MelSpectrogram, self).forward(torch.tensor(samples))
+
+
+class BPETransform:
+    """
+    Byte Pair Encoding transform
+    :param: model_path: YTTM BPE object or path to YTTM BPE model
+    """
+    def __init__(self, model: Union[str, yttm.BPE]):
+        if isinstance(model, yttm.BPE):
+            self.bpe = model
+        else:
+            self.bpe = yttm.BPE(model=model)
+
+
+    def __call__(self, utterance):
+        return torch.tensor(self.bpe.encode(utterance))
 
 
 class Squeeze:

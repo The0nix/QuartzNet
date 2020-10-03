@@ -26,17 +26,17 @@ class LIBRISPEECH(torchaudio.datasets.LIBRISPEECH):
     torchaudio.datasets.LIBRISPEECH
     waveform_transform
     """
-    def __init__(self, waveform_transform=None, target_transform=None, *args, **kwargs):
+    def __init__(self, waveform_transform=None, utterance_transform=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.waveform_transform = waveform_transform
-        self.target_transform = target_transform
+        self.utterance_transform = utterance_transform
 
     def __getitem__(self, idx) -> Tuple[torch.Tensor, int, str, int, int, int]:
         waveform, sample_rate, utterance, speaker_id, chapter_id, utterance_id = super().__getitem__(idx)
         if self.waveform_transform is not None:
             waveform = self.waveform_transform(samples=waveform, sample_rate=sample_rate)
-        if self.target_transform is not None:
-            utterance = self.target_transform(utterance)
+        if self.utterance_transform is not None:
+            utterance = self.utterance_transform(utterance)
         return waveform, sample_rate, utterance, speaker_id, chapter_id, utterance_id
 
     def get_utterance(self, idx: int) -> str:

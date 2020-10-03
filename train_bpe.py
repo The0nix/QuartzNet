@@ -7,7 +7,6 @@ import datasets
 
 @hydra.main(config_name="train_config")
 def train_bpe(cfg: DictConfig):
-    print(hydra.utils.to_absolute_path(cfg.data.path))
     dataset = datasets.LIBRISPEECH(root=hydra.utils.to_absolute_path(cfg.data.path),
                                    url="train-clean-100", download=True)
 

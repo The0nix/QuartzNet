@@ -1,5 +1,6 @@
 import random
 
+import wandb
 import torch
 import torch.nn as nn
 import torchaudio
@@ -37,41 +38,62 @@ def get_waveform_transforms(cfg: DictConfig):
     ])
 
 
+def collate_fn(batch):
+    return list(zip(*batch))
+
+
 @hydra.main(config_name="train_config")
 def train(cfg: DictConfig):
     fix_seeds()
-    quartznet = model.QuartzNet(C_in=cfg.preprocessing.n_mels, n_labels=10,
+
+    device = torch.device(cfg.training.device)
+    quartznet = model.QuartzNet(C_in=cfg.preprocessing.n_mels, n_labels=cfg.bpe.vocab_size,
                                 Cs=cfg.model.channels,
                                 Ks=cfg.model.kernels,
-                                Rs=cfg.model.repeats, Ss=5)
+                                Rs=cfg.model.repeats, Ss=5).to(device)
     waveform_transforms = get_waveform_transforms(cfg)
+    utterance_transform = transforms.BPETransform(model=hydra.utils.to_absolute_path(cfg.bpe.model_path))
     dataset = datasets.LIBRISPEECH(root=hydra.utils.to_absolute_path(cfg.data.path),
                                    waveform_transform=waveform_transforms,
+                                   utterance_transform=utterance_transform,
                                    url="train-clean-100", download=True)
     train_idx, test_idx = datasets.get_split(dataset, train_size=cfg.data.train_size, random_state=cfg.common.seed)
-    bpe = yttm.BPE(model=hydra.utils.to_absolute_path(cfg.bpe.model_path))
-    print(bpe.encode([dataset.get_utterance(0)]))
 
     optimizer = torch.optim.Adam(quartznet.parameters(), lr=cfg.training.lr)
     criterion = nn.CTCLoss()
 
     train_dataloader = torchdata.DataLoader(dataset,
                                             num_workers=cfg.training.num_workers,
-                                            batch_size=cfg.trainig.batch_size,
+                                            batch_size=cfg.training.batch_size,
+                                            collate_fn=collate_fn,
                                             sampler=torchdata.sampler.SubsetRandomSampler(train_idx))
     test_dataloader = torchdata.DataLoader(dataset,
                                            num_workers=cfg.training.num_workers,
-                                           batch_size=cfg.trainig.batch_size,
+                                           batch_size=cfg.training.batch_size,
+                                           collate_fn=collate_fn,
                                            sampler=torchdata.sampler.SubsetRandomSampler(test_idx))
 
-    for epoch in trange(cfg.training.n_epochs, title="Epoch"):
-        for data in tqdm(train_dataloader, title="Batch", leave=False):
-            spectrogram, sample_rate, utterance, speaker_id, chapter_id, utterance_id = data
-            preds = quartznet(spectrogram)
-            loss = criterion(preds, utterance, input_lengths, target_lengths)
+    wandb.init(project=cfg.wandb.project)
+    wandb.watch(quartznet)
+    for epoch in trange(cfg.training.n_epochs, desc="Epoch"):
+        for batch_idx, batch in enumerate(tqdm(train_dataloader, desc="Batch", leave=False)):
+            spectrograms, sample_rates, utterances, speaker_ids, chapter_ids, utterance_ids = batch
+
+            input_lengths = [len(spectrogram) for spectrogram in spectrograms]
+            target_lengths = [len(utterance) for utterance in utterances]
+
+            utterances = nn.utils.rnn.pad_sequence(utterances, batch_first=True).to(device)
+            spectrograms = nn.utils.rnn.pad_sequence([s.transpose(0, 1) for s in spectrograms], batch_first=True).to(device)
+            spectrograms = spectrograms.transpose(1, 2)
+
+            logprobs = quartznet(spectrograms).transpose(0, 1)
+            loss = criterion(logprobs, utterances, input_lengths, target_lengths)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+            if batch_idx % cfg.wandb.log_interval == 0:
+                wandb.log({"train_loss": loss})
 
 
     import matplotlib.pyplot as plt
