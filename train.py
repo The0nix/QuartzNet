@@ -1,4 +1,4 @@
-import random
+import argparse
 
 import wandb
 import torch
@@ -102,4 +102,4 @@ def train(cfg: DictConfig):
 
 
 if __name__ == "__main__":
-    train()
+    args = parse_args()
