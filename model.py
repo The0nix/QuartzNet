@@ -65,6 +65,7 @@ class QuartzNet(nn.Module):
         assert len(Rs) == 5, "Cs must be a collection of length 5"
         if isinstance(Ss, int):
             Ss = [Ss] * 5
+        self.n_labels = n_labels
 
         self.C1 = nn.Sequential(
             nn.Conv1d(C_in, 256, kernel_size=33, padding=33 // 2),

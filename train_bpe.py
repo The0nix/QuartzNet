@@ -20,7 +20,8 @@ def train_bpe(cfg: DictConfig):
     yttm.BPE.train(
         data=cfg.bpe.train_data_path,
         model=hydra.utils.to_absolute_path(cfg.bpe.model_path),
-        vocab_size=cfg.bpe.vocab_size
+        vocab_size=cfg.bpe.vocab_size,
+        pad_id=0,
     )
 
 
