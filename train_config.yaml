@@ -1,6 +1,7 @@
 common:
   seed: 1337
 model:
+  path: # Path to saved model to continue training
   channels: [256, 256, 512, 512, 512]
   kernels: [33, 39, 51, 63, 75]
   repeats: [3, 3, 3, 3, 3]
@@ -16,9 +17,9 @@ preprocessing:
 training:
   device: cuda
   n_epochs: 100
-  lr: 1e-4
-  num_workers: 10
-  batch_size: 4
+  lr: 1e-5
+  num_workers: 6
+  batch_size: 16
 waveform_transforms:
   - _target_: transforms.ToNumpy
   - _target_: transforms.Squeeze

@@ -57,13 +57,14 @@ def ctc_decode(seq: torch.Tensor, blank_idx: int):
 
 
 def process_batch(model: nn.Module, batch: Tuple, criterion: nn.modules.loss._Loss,
-                  optimizer: torch.optim.Optimizer, train: bool, device) \
+                  optimizer: torch.optim.Optimizer, scaler: torch.cuda.amp.GradScaler, train: bool, device) \
         -> Tuple[torch.Tensor, torch.Tensor, List]:
     """
     :param model: model to train
     :param batch: batch with spectrograms, sample_rates, utterances, speaker_ids, chapter_ids, utterance_ids
     :param criterion: criterion to calculate loss
     :param optimizer: optimizer to step
+    :param scaler: GradScaler for mixed precision training
     :param train: perform gradient step
     :return: (loss, logprobs, utterances)
     """
@@ -76,15 +77,35 @@ def process_batch(model: nn.Module, batch: Tuple, criterion: nn.modules.loss._Lo
     spectrograms = nn.utils.rnn.pad_sequence([s.transpose(0, 1) for s in spectrograms], True, 0).to(device)
     spectrograms = spectrograms.transpose(1, 2)
 
-    logprobs = model(spectrograms)
-    loss = criterion(logprobs.permute(2, 0, 1), utterances, input_lengths, target_lengths)
+    with torch.cuda.amp.autocast():
+        logprobs = model(spectrograms)
+        loss = criterion(logprobs.permute(2, 0, 1), utterances, input_lengths, target_lengths)
 
     if train:
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+    loss = loss.detach()
+    logprobs = logprobs.detach()
+    utterances = utterances.detach()
 
     return loss, logprobs, utterances
+
+
+def get_texts(utterances, logprobs, bpe: yttm.BPE, blank_idx) -> Tuple[List[str], List[str]]:
+    """
+    Get utterances and logprobs, ctc decode, remove padding, bpe decode and return texts
+    :param utterances: bpe encoded utterances from dataset
+    :param logprobs: output from network
+    :return: two lists of strings for true and predicted texts
+    """
+    pred_tokens = [np.trim_zeros(ctc_decode(prob, blank_idx).tolist()) for prob in logprobs]
+    true_tokens = [np.trim_zeros(utt.tolist()) for utt in utterances]
+    pred_texts = [bpe.decode(pred) for pred in pred_tokens]
+    true_texts = [bpe.decode(true) for true in true_tokens]
+    return true_texts, pred_texts
 
 
 @hydra.main(config_name="train_config")
@@ -117,18 +138,23 @@ def train(cfg: DictConfig):
 
     # Split dataset and create dataloaders
     train_idx, val_idx = datasets.get_split(dataset, train_size=cfg.data.train_size, random_state=cfg.common.seed)
-    train_idx = train_idx[:int(train_idx.shape[0] * 0.01)]
-    val_idx = val_idx[:int(val_idx.shape[0] * 0.01)]
+    # train_idx = train_idx[:int(train_idx.shape[0] * 0.001)]
+    # val_idx = train_idx
     train_dataloader = torchdata.DataLoader(dataset,
                                             num_workers=cfg.training.num_workers,
                                             batch_size=cfg.training.batch_size,
                                             collate_fn=collate_fn,
+                                            pin_memory=True,
                                             sampler=torchdata.sampler.SubsetRandomSampler(train_idx))
     val_dataloader = torchdata.DataLoader(dataset,
                                           num_workers=cfg.training.num_workers,
                                           batch_size=cfg.training.batch_size,
                                           collate_fn=collate_fn,
+                                          pin_memory=True,
                                           sampler=torchdata.sampler.SubsetRandomSampler(val_idx))
+
+    # Create scaler for mixed precision training
+    scaler = torch.cuda.amp.GradScaler()
 
     # Start training
     wandb.init(project=cfg.wandb.project)
@@ -137,23 +163,28 @@ def train(cfg: DictConfig):
         # Train part
         quartznet.train()
         for batch_idx, batch in enumerate(tqdm(train_dataloader, desc="Training batch", leave=False)):
-            loss, _, _ = process_batch(quartznet, batch, criterion, optimizer, train=True, device=device)
+            loss, logprobs, utterances = process_batch(quartznet, batch, criterion, optimizer,
+                                       scaler, train=True, device=device)
 
             if batch_idx % cfg.wandb.log_interval == 0:
+                true_texts, pred_texts = get_texts(utterances, logprobs, bpe, cfg.bpe.vocab_size)
+                wer = np.mean([jiwer.wer(true, pred) for true, pred in zip(true_texts, pred_texts)])
                 step = epoch_idx * len(train_dataloader) * train_dataloader.batch_size + batch_idx * train_dataloader.batch_size
-                wandb.log({"train_loss": loss.item()}, step=step)
+                wandb.log({
+                    "train_loss": loss.item(),
+                    "train_wer": wer,
+                    "train_examples": wandb.Table(columns=['GT', 'Prediction'], data=zip(true_texts, pred_texts))
+                }, step=step)
 
         # Eval part
         quartznet.eval()
         val_wers = []
         val_losses = []
         for batch_idx, batch in enumerate(tqdm(val_dataloader, desc="Validation batch", leave=False)):
-            loss, logprobs, utterances = process_batch(quartznet, batch, criterion, optimizer, train=False, device=device)
+            loss, logprobs, utterances = process_batch(quartznet, batch, criterion, optimizer,
+                                                       scaler, train=False, device=device)
             val_losses.append(loss.item())
-            pred_texts = [bpe.decode(ctc_decode(prob, cfg.bpe.vocab_size).tolist()) for prob in logprobs]
-            print(logprobs.shape)
-            print(logprobs[0].argmax(dim=0))
-            true_texts = [bpe.decode(utt.tolist()) for utt in utterances]
+            true_texts, pred_texts = get_texts(utterances, logprobs, bpe, cfg.bpe.vocab_size)
             val_wers.append(np.mean([jiwer.wer(true, pred) for true, pred in zip(true_texts, pred_texts)]))
         step = (epoch_idx + 1) * len(train_dataloader) * train_dataloader.batch_size
         wandb.log({
@@ -163,7 +194,6 @@ def train(cfg: DictConfig):
         }, step=step)
 
         # TODO: Add model saving
-        # TODO: Add validation with WER
 
 
 if __name__ == "__main__":
