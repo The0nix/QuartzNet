@@ -17,6 +17,17 @@ class MelSpectrogram(torchaudio.transforms.MelSpectrogram):
         return super(MelSpectrogram, self).forward(torch.tensor(samples))
 
 
+class Resample(torchaudio.transforms.Resample):
+    """
+    torchaudio Resample wrapper for audiomentations's Compose
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def forward(self, samples: Union[np.ndarray, torch.Tensor], sample_rate: int) -> torch.Tensor:
+        return super(Resample, self).forward(samples)
+
+
 class BPETransform:
     """
     Byte Pair Encoding transform
