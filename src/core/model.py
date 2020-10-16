@@ -68,7 +68,8 @@ class QuartzNet(nn.Module):
         self.n_labels = n_labels
 
         self.C1 = nn.Sequential(
-            nn.Conv1d(C_in, 256, kernel_size=33, padding=33 // 2, stride=2),
+            nn.Conv1d(C_in, 256, groups=C_in, kernel_size=33, padding=33 // 2, stride=2),
+            nn.Conv1d(256, 256, kernel_size=1),
             nn.BatchNorm1d(256),
             nn.ReLU()
         )
@@ -82,7 +83,8 @@ class QuartzNet(nn.Module):
         )
 
         self.C2 = nn.Sequential(
-            nn.Conv1d(512, 512, kernel_size=87, dilation=2, padding=87 - 1),
+            nn.Conv1d(512, 512, groups=512, kernel_size=87, dilation=2, padding=87 - 1),
+            nn.Conv1d(512, 512, kernel_size=1),
             nn.BatchNorm1d(512),
             nn.ReLU()
         )

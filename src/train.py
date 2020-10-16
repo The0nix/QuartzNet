@@ -53,7 +53,7 @@ def process_batch(model: nn.Module, batch: Tuple, criterion: nn.modules.loss._Lo
     return loss, logprobs, utterances, waveforms
 
 
-@hydra.main(config_path="config", config_name="config")
+@hydra.main(config_path="../config", config_name="config")
 def train(cfg: DictConfig):
     core.utils.fix_seeds()
     device = torch.device(cfg.training.device)
@@ -68,10 +68,10 @@ def train(cfg: DictConfig):
         quartznet.load_state_dict(torch.load(hydra.utils.to_absolute_path(cfg.model.path)))
 
     # Load BPE encoder from disk
-    bpe = yttm.BPE(model=hydra.utils.to_absolute_path(cfg.bpe.model_path))
+    bpe = yttm.BPE(model=str(core.utils.get_bpe_path(cfg)))
 
     # Create transforms
-    waveform_transforms = core.utils.get_waveform_transforms(cfg)
+    waveform_transforms = core.utils.get_waveform_transforms(cfg.waveform_transforms)
     utterance_transform = core.transforms.BPETransform(model=bpe)
 
     # Create dataset
@@ -82,15 +82,15 @@ def train(cfg: DictConfig):
 
     # Create optimizer and criterion
     optimizer = torch.optim.Adam(quartznet.parameters(), lr=cfg.training.lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=cfg.scheduler.step_size, gamma=cfg.scheduler.gamma)
     criterion = nn.CTCLoss(blank=cfg.bpe.vocab_size)
 
     # Split dataset and create dataloaders
-    waveform_lengths = np.load(os.path.join(hydra.utils.to_absolute_path(cfg.dataset.path),
-                                            cfg.dataset.lengths_filename.format("waveform")))
-    indices_lt5 = np.where(waveform_lengths < 8 * cfg.dataset.original_sample_rate)
+    waveform_lengths = np.load(core.utils.get_lengths_path(cfg, "waveform"))
+    indices_lt5 = np.where(waveform_lengths < 15 * cfg.dataset.original_sample_rate)
     train_idx, val_idx = core.datasets.get_split(dataset, train_size=cfg.dataset.train_size, random_state=cfg.common.seed)
-    # train_idx = np.intersect1d(train_idx, indices_lt5)
-    # val_idx = np.intersect1d(val_idx, indices_lt5)
+    train_idx = np.intersect1d(train_idx, indices_lt5)
+    val_idx = np.intersect1d(val_idx, indices_lt5)
     # train_idx = train_idx[:int(train_idx.shape[0] * 0.0005)]
     # val_idx = train_idx
 
@@ -113,7 +113,7 @@ def train(cfg: DictConfig):
     # Start training
     wandb.init(project=cfg.wandb.project, tags=[cfg.dataset.name])
     wandb.watch(quartznet, log="all", log_freq=cfg.wandb.log_interval)
-    for epoch_idx in trange(cfg.training.n_epochs, desc="Epoch"):
+    for epoch_idx in trange(cfg.training.start_epoch or 0, cfg.training.n_epochs, desc="Epoch"):
         # Train part
         quartznet.train()
         for batch_idx, batch in enumerate(tqdm(train_dataloader, desc="Training batch", leave=False)):
@@ -128,6 +128,8 @@ def train(cfg: DictConfig):
                 step = (epoch_idx * len(train_dataloader) * train_dataloader.batch_size +
                         batch_idx * train_dataloader.batch_size)
                 wandb.log({
+                    "epoch": epoch_idx,
+                    "lr": optimizer.param_groups[0]['lr'],
                     "train_loss": loss.item(),
                     "train_wer": wer,
                     "train_cer": cer,
@@ -135,6 +137,7 @@ def train(cfg: DictConfig):
                 }, step=step)
                 # Save the model
                 torch.save(quartznet.state_dict(), MODEL_PATH)
+        scheduler.step()
 
         # Eval part
         quartznet.eval()

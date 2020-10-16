@@ -2,6 +2,7 @@ from typing import Union
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torchaudio
 import youtokentome as yttm
 
@@ -60,12 +61,13 @@ class ToNumpy:
         return np.array(samples)
 
 
-class LogTransform:
+class LogTransform(nn.Module):
     """
     Transform for taking logarithm of mel spectrograms (or anything else)
     :param fill_value: value to substitute non-positive numbers with before applying log
     """
     def __init__(self, fill_value: float = 1e-5) -> None:
+        super().__init__()
         self.fill_value = fill_value
 
     def __call__(self, samples: torch.Tensor, sample_rate: int):

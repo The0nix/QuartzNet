@@ -39,6 +39,8 @@ RUN . ~/.bashrc && conda install pytorch torchvision cudatoolkit=10.2 -c pytorch
 COPY requirements.txt /root/requirements.txt
 RUN . ~/.bashrc && pip install -r /root/requirements.txt
 
-COPY src/* .
+COPY ./src ./src
 
-CMD . ~/.bashrc && python train.py
+ENV PYTHONPATH=src
+
+CMD . ~/.bashrc && python ./src/scripts/train_bpe.py && python ./src/scripts/build_dataset_lengths.py && python ./src/train.py

@@ -1,7 +1,6 @@
 # @package _group_
 name: librispeech
-path: "/street/data/librispeech"
-lengths_filename: "lengths-${dataset.name}-{}.npy"
+path: "data/librispeech"
 train_size: 0.95
 original_sample_rate: 16000
 sample_rate: 16000

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import hydra
 from omegaconf import DictConfig
 import youtokentome as yttm
@@ -5,8 +7,10 @@ import youtokentome as yttm
 import core
 
 
-@hydra.main(config_path="../config", config_name="config")
+@hydra.main(config_path="../../config", config_name="config")
 def train_bpe(cfg: DictConfig):
+    if core.utils.get_bpe_path(cfg).exists() and not cfg.bpe.rebuild:
+        return
     dataset = core.datasets.get_dataset(name=cfg.dataset.name,
                                         root=hydra.utils.to_absolute_path(cfg.dataset.path))
 
@@ -20,7 +24,7 @@ def train_bpe(cfg: DictConfig):
 
     yttm.BPE.train(
         data=cfg.bpe.train_data_path,
-        model=hydra.utils.to_absolute_path(cfg.bpe.model_path),
+        model=str(core.utils.get_bpe_path(cfg)),
         vocab_size=cfg.bpe.vocab_size,
         pad_id=0,
     )

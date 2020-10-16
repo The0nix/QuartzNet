@@ -1,5 +1,6 @@
 import random
 import math
+from pathlib import Path
 from typing import Tuple, List
 
 import torch
@@ -11,6 +12,19 @@ import audiomentations as aud
 import youtokentome as yttm
 
 
+def get_bpe_path(cfg):
+    path = Path(cfg.common.files_path, cfg.bpe.model_path)
+    return Path(hydra.utils.to_absolute_path(path))
+
+
+def get_lengths_path(cfg, lengths_type: str):
+    """
+    :param lengths_type: either "waveform" or "utterance" for waveform and utterance lengths respectively
+    """
+    path = Path(cfg.common.files_path, cfg.lengths.lengths_filename.format(lengths_type))
+    return Path(hydra.utils.to_absolute_path(path))
+
+
 def fix_seeds(seed=1337):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -20,19 +34,25 @@ def fix_seeds(seed=1337):
     torch.backends.cudnn.deterministic = True
 
 
-def get_waveform_transforms(cfg: DictConfig):
+def get_waveform_transforms(transforms: DictConfig, device=None):
     """
     get all necessary transforms from config
-    :param cfg: main app config
+    :param transforms: transforms from config
+    :param device: device if transforms need to be ported to device
     :return: transforms composed into aud.Compose
     """
-    if cfg.waveform_transforms is not None:
+    if transforms is None:
+        return None
+    if device is not None:
         return aud.Compose([
-            hydra.utils.instantiate(transform)
-            for transform in cfg.waveform_transforms
+            hydra.utils.instantiate(transform).to(device)
+            for transform in transforms
         ])
     else:
-        return None
+        return aud.Compose([
+            hydra.utils.instantiate(transform)
+            for transform in transforms
+        ])
 
 
 def pad_collate(batch: List[Tuple]) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor],
@@ -76,8 +96,8 @@ def get_texts(utterances, logprobs, bpe: yttm.BPE, blank_idx) -> Tuple[List[str]
     :param blank_idx: index of ctc blank value
     :return: two lists of strings for true and predicted texts
     """
-    pred_tokens = [np.trim_zeros(ctc_decode(prob, blank_idx).tolist()) for prob in logprobs]
     true_tokens = [np.trim_zeros(utt.tolist()) for utt in utterances]
-    pred_texts = [bpe.decode(pred)[0] for pred in pred_tokens]
-    true_texts = [bpe.decode(true)[0] for true in true_tokens]
+    pred_tokens = [np.trim_zeros(ctc_decode(prob, blank_idx).tolist()) for prob in logprobs]
+    true_texts = [coded[0] if len(coded) > 0 else "" for coded in [bpe.decode(true) for true in true_tokens]]
+    pred_texts = [coded[0] if len(coded) > 0 else "" for coded in [bpe.decode(pred) for pred in pred_tokens]]
     return true_texts, pred_texts

@@ -1,13 +1,15 @@
+
 defaults:
-  - dataset: numbers
+  - dataset: librispeech
 common:
   seed: 1337
+  files_path: "files"  # path to files like bpe model and dataset lengths
 model:
-  path: # Path to saved model to continue training
+  path: "outputs/2020-10-15/22-10-22/model.pth"  # Path to saved model to continue training
   channels: [256, 256, 512, 512, 512]  # C in paper
   kernels: [33, 39, 51, 63, 75]        # K in paper
-  repeats: [3, 3, 3, 3, 3]             # R in paper
-  block_repeats: [1, 1, 1, 1, 1]       # S in paper
+  repeats: [5, 5, 5, 5, 5]             # R in paper
+  block_repeats: [2, 2, 2, 2, 2]       # S in paper
 preprocessing:
   f_min: 0
   f_max: 8000
@@ -16,9 +18,13 @@ preprocessing:
 training:
   device: cuda
   n_epochs: 300
-  lr: 1e-3
+  start_epoch: 56
+  lr: 1e-4
   num_workers: 6
-  batch_size: 50
+  batch_size: 100
+scheduler:
+  step_size: 30
+  gamma: 0.5
 waveform_transforms:
   - _target_: core.transforms.Resample
     orig_freq: ${dataset.original_sample_rate}
@@ -29,14 +35,14 @@ waveform_transforms:
 #    min_amplitude: 0.001
 #    max_amplitude: 0.015
 #    p: 0.5
-#  - _target_: audiomentations.TimeStretch
-#    min_rate: 0.8
-#    max_rate: 1.25
-#    p: 0.5
-#  - _target_: audiomentations.PitchShift
-#    min_semitones: -4
-#    max_semitones: 4
-#    p: 0.5
+  - _target_: audiomentations.TimeStretch
+    min_rate: 0.8
+    max_rate: 1.25
+    p: 0.5
+  - _target_: audiomentations.PitchShift
+    min_semitones: -4
+    max_semitones: 4
+    p: 0.5
   - _target_: core.transforms.MelSpectrogram
     sample_rate: ${dataset.sample_rate}
     f_min: ${preprocessing.f_min}
@@ -45,9 +51,13 @@ waveform_transforms:
     n_mels: ${preprocessing.n_mels}
   - _target_: core.transforms.LogTransform
 bpe:
-  vocab_size: 24
+  vocab_size: 100
   train_data_path: "bpe_data.txt"
   model_path: "bpe-${dataset.name}-${bpe.vocab_size}.model"
+  rebuild: False  # Whether to rebuild bpe if it is already present
+lengths:
+  lengths_filename: "lengths-${dataset.name}-{}.npy"
+  rebuild: False  # Whether to rebuild lengths file if it is already present
 wandb:
   project: "QuartzNet-Tamerlan-Tabolov"
   log_interval: 10

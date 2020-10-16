@@ -1,7 +1,6 @@
 # @package _group_
 name: numbers
-path: "/street/data/asr-numbers/numbers"
-lengths_filename: "lengths-${dataset.name}-{}.npy"
+path: "data/asr-numbers/numbers"
 train_size: 0.95
 original_sample_rate: 24000
 sample_rate: 16000
