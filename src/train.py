@@ -1,11 +1,14 @@
 import os
 from typing import Tuple, List
+from pathlib import Path
 
 import wandb
 import torch
 import torch.nn as nn
 import jiwer
 import torch.utils.data as torchdata
+import torch.multiprocessing as torchmp
+import torch.distributed as torchdist
 import numpy as np
 import hydra
 from omegaconf import DictConfig
@@ -53,30 +56,39 @@ def process_batch(model: nn.Module, batch: Tuple, criterion: nn.modules.loss._Lo
     return loss, logprobs, utterances, waveforms
 
 
-@hydra.main(config_path="../config", config_name="config")
-def train(cfg: DictConfig):
+def train(rank, cfg: DictConfig, original_path: Path):
     core.utils.fix_seeds()
-    device = torch.device(cfg.training.device)
+
+    # Deal with distributed
+    n_gpus = len(cfg.distributed.gpus)
+    gpu_id = cfg.distributed.gpus[rank]
+    torchdist.init_process_group(
+        backend='nccl',
+        init_method='env://',
+        world_size=n_gpus,
+        rank=cfg.distributed.gpus[rank]
+    )
 
     # Initialize network
+    device = torch.device(gpu_id)
     quartznet = core.model.QuartzNet(C_in=cfg.preprocessing.n_mels, n_labels=cfg.bpe.vocab_size + 1,
                                      Cs=cfg.model.channels,
                                      Ks=cfg.model.kernels,
                                      Rs=cfg.model.repeats,
                                      Ss=cfg.model.block_repeats).to(device)
     if cfg.model.path is not None:
-        quartznet.load_state_dict(torch.load(hydra.utils.to_absolute_path(cfg.model.path)))
+        quartznet.load_state_dict(torch.load(original_path / cfg.model.path))
+    quartznet = nn.parallel.DistributedDataParallel(quartznet, device_ids=[gpu_id])
 
     # Load BPE encoder from disk
-    bpe = yttm.BPE(model=str(core.utils.get_bpe_path(cfg)))
 
     # Create transforms
     waveform_transforms = core.utils.get_waveform_transforms(cfg.waveform_transforms)
-    utterance_transform = core.transforms.BPETransform(model=bpe)
+    utterance_transform = core.transforms.BPETransform(model_path=str(core.utils.get_bpe_path(cfg, original_path)))
 
     # Create dataset
     dataset = core.datasets.get_dataset(name=cfg.dataset.name,
-                                        root=hydra.utils.to_absolute_path(cfg.dataset.path),
+                                        root=original_path / cfg.dataset.path,
                                         waveform_transform=waveform_transforms,
                                         utterance_transform=utterance_transform)
 
@@ -86,7 +98,7 @@ def train(cfg: DictConfig):
     criterion = nn.CTCLoss(blank=cfg.bpe.vocab_size)
 
     # Split dataset and create dataloaders
-    waveform_lengths = np.load(core.utils.get_lengths_path(cfg, "waveform"))
+    waveform_lengths = np.load(core.utils.get_lengths_path(cfg, "waveform", original_path))
     indices_lt5 = np.where(waveform_lengths < 15 * cfg.dataset.original_sample_rate)
     train_idx, val_idx = core.datasets.get_split(dataset, train_size=cfg.dataset.train_size, random_state=cfg.common.seed)
     train_idx = np.intersect1d(train_idx, indices_lt5)
@@ -94,18 +106,20 @@ def train(cfg: DictConfig):
     # train_idx = train_idx[:int(train_idx.shape[0] * 0.0005)]
     # val_idx = train_idx
 
-    train_dataloader = torchdata.DataLoader(dataset,
+    train_dataset = torchdata.Subset(dataset, train_idx)
+    val_dataset = torchdata.Subset(dataset, val_idx)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=n_gpus, rank=rank)
+    train_dataloader = torchdata.DataLoader(train_dataset,
                                             num_workers=cfg.training.num_workers,
                                             batch_size=cfg.training.batch_size,
                                             collate_fn=core.utils.pad_collate,
                                             pin_memory=True,
-                                            sampler=torchdata.sampler.SubsetRandomSampler(train_idx))
-    val_dataloader = torchdata.DataLoader(dataset,
+                                            sampler=train_sampler)
+    val_dataloader = torchdata.DataLoader(val_dataset,
                                           num_workers=cfg.training.num_workers,
                                           batch_size=cfg.training.batch_size,
                                           collate_fn=core.utils.pad_collate,
-                                          pin_memory=True,
-                                          sampler=torchdata.sampler.SubsetRandomSampler(val_idx))
+                                          pin_memory=True)
 
     # Create scaler for mixed precision training
     scaler = torch.cuda.amp.GradScaler()
@@ -120,12 +134,12 @@ def train(cfg: DictConfig):
             loss, logprobs, utterances, waveforms = process_batch(quartznet, batch, criterion, optimizer,
                                                                   scaler, train=True, device=device)
 
-            if batch_idx % cfg.wandb.log_interval == 0:
-                true_texts, pred_texts = core.utils.get_texts(utterances, logprobs, bpe, cfg.bpe.vocab_size)
+            if rank == 0 and batch_idx % cfg.wandb.log_interval == 0:
+                true_texts, pred_texts = core.utils.get_texts(utterances, logprobs, utterance_transform, cfg.bpe.vocab_size)
                 wer = jiwer.wer(true_texts, pred_texts)
                 cer = jiwer.wer([" ".join(t.replace(" ", "*")) for t in true_texts],
                                 [" ".join(t.replace(" ", "*")) for t in pred_texts])
-                step = (epoch_idx * len(train_dataloader) * train_dataloader.batch_size +
+                step = (epoch_idx * len(train_dataloader) * train_dataloader.batch_size * n_gpus +
                         batch_idx * train_dataloader.batch_size)
                 wandb.log({
                     "epoch": epoch_idx,
@@ -140,29 +154,36 @@ def train(cfg: DictConfig):
         scheduler.step()
 
         # Eval part
-        quartznet.eval()
-        val_wers = []
-        val_cers = []
-        val_losses = []
-        for batch_idx, batch in enumerate(tqdm(val_dataloader, desc="Validation batch", leave=False)):
-            loss, logprobs, utterances, waveforms = process_batch(quartznet, batch, criterion, optimizer,
-                                                                  scaler, train=False, device=device)
-            val_losses.append(loss.item())
-            true_texts, pred_texts = core.utils.get_texts(utterances, logprobs, bpe, cfg.bpe.vocab_size)
-            val_wers.append(jiwer.wer(true_texts, pred_texts))
-            val_cers.append(jiwer.wer([" ".join(t.replace(" ", "*")) for t in true_texts],
-                                      [" ".join(t.replace(" ", "*")) for t in pred_texts]))
-        step = (epoch_idx + 1) * len(train_dataloader) * train_dataloader.batch_size
-        wandb.log({
-            "val_loss": np.mean(val_losses),
-            "val_wer": np.mean(val_wers),
-            "val_сer": np.mean(val_wers),
-            "val_examples": wandb.Table(columns=['GT', 'Prediction'], data=zip(true_texts, pred_texts)),
-            "val_audio": [wandb.Audio(w.numpy().ravel(), sample_rate=cfg.dataset.sample_rate) for w in waveforms],
-        }, step=step)
+        if rank == 0:
+            quartznet.eval()
+            val_wers = []
+            val_cers = []
+            val_losses = []
+            for batch_idx, batch in enumerate(tqdm(val_dataloader, desc="Validation batch", leave=False)):
+                loss, logprobs, utterances, waveforms = process_batch(quartznet, batch, criterion, optimizer,
+                                                                      scaler, train=False, device=device)
+                val_losses.append(loss.item())
+                true_texts, pred_texts = core.utils.get_texts(utterances, logprobs, utterance_transform, cfg.bpe.vocab_size)
+                val_wers.append(jiwer.wer(true_texts, pred_texts))
+                val_cers.append(jiwer.wer([" ".join(t.replace(" ", "*")) for t in true_texts],
+                                          [" ".join(t.replace(" ", "*")) for t in pred_texts]))
+            step = (epoch_idx + 1) * len(train_dataloader) * train_dataloader.batch_size
+            wandb.log({
+                "val_loss": np.mean(val_losses),
+                "val_wer": np.mean(val_wers),
+                "val_сer": np.mean(val_wers),
+                "val_examples": wandb.Table(columns=['GT', 'Prediction'], data=zip(true_texts, pred_texts)),
+                "val_audio": [wandb.Audio(w.numpy().ravel(), sample_rate=cfg.dataset.sample_rate) for w in waveforms],
+            }, step=step)
+        torchdist.barrier()
 
-        # TODO: Add model saving
 
+@hydra.main(config_path="../config", config_name="config")
+def main(cfg: DictConfig):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '11337'
+    torchmp.start_processes(train, nprocs=len(cfg.distributed.gpus), args=(cfg, Path(hydra.utils.get_original_cwd())),
+                            start_method="spawn")
 
 if __name__ == "__main__":
-    train()
+    main()

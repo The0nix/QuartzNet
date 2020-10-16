@@ -4,8 +4,10 @@ defaults:
 common:
   seed: 1337
   files_path: "files"  # path to files like bpe model and dataset lengths
+distributed:
+  gpus: [0]
 model:
-  path: "outputs/2020-10-15/22-10-22/model.pth"  # Path to saved model to continue training
+  path: "outputs/2020-10-16/08-55-04/model.pth"  # Path to saved model to continue training
   channels: [256, 256, 512, 512, 512]  # C in paper
   kernels: [33, 39, 51, 63, 75]        # K in paper
   repeats: [5, 5, 5, 5, 5]             # R in paper
@@ -16,10 +18,9 @@ preprocessing:
   n_fft: 512
   n_mels: 64
 training:
-  device: cuda
   n_epochs: 300
-  start_epoch: 56
-  lr: 1e-4
+  start_epoch: 82
+  lr: 5e-5
   num_workers: 6
   batch_size: 100
 scheduler:

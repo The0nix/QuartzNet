@@ -32,17 +32,36 @@ class Resample(torchaudio.transforms.Resample):
 class BPETransform:
     """
     Byte Pair Encoding transform
-    :param: model_path: YTTM BPE object or path to YTTM BPE model
+    :param: model_path: path to YTTM BPE model
     """
-    def __init__(self, model: Union[str, yttm.BPE]):
-        if isinstance(model, yttm.BPE):
-            self.bpe = model
-        else:
-            self.bpe = yttm.BPE(model=model)
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self.bpe = yttm.BPE(model=self.model_path)
 
+        # def bpe_reduce(self):
+        #     return (
+        #         self.__class__,
+        #         (str(model_path),),
+        #     )
+        #
+        # yttm.BPE.__reduce__ = bpe_reduce
 
     def __call__(self, utterance):
         return torch.tensor(self.bpe.encode(utterance))
+
+    def __getstate__(self):
+        # Copy the object's state from self.__dict__ which contains
+        # all our instance attributes. Always use the dict.copy()
+        # method to avoid modifying the original state.
+        state = self.__dict__.copy()
+        # Remove the unpicklable entries.
+        del state['bpe']
+        return state
+
+    def __setstate__(self, state):
+        # Restore instance attributes (i.e., filename and lineno).
+        self.__dict__.update(state)
+        self.bpe = yttm.BPE(model=self.model_path)
 
 
 class Squeeze:

@@ -1,7 +1,7 @@
 import random
 import math
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 import torch
 import torch.nn as nn
@@ -11,18 +11,21 @@ from omegaconf import DictConfig
 import audiomentations as aud
 import youtokentome as yttm
 
+import core
 
-def get_bpe_path(cfg):
+def get_bpe_path(cfg, original_path: Optional[Path] = None):
     path = Path(cfg.common.files_path, cfg.bpe.model_path)
-    return Path(hydra.utils.to_absolute_path(path))
+    return Path(original_path / path if original_path else hydra.utils.to_absolute_path(path))
 
 
-def get_lengths_path(cfg, lengths_type: str):
+def get_lengths_path(cfg, lengths_type: str, original_path: Optional[Path] = None):
     """
     :param lengths_type: either "waveform" or "utterance" for waveform and utterance lengths respectively
+    :param original_path: Path object with original working directory. It is used when hydra.utils.to_absolute_path(path)
+    is not available (in subprocess)
     """
     path = Path(cfg.common.files_path, cfg.lengths.lengths_filename.format(lengths_type))
-    return Path(hydra.utils.to_absolute_path(path))
+    return Path(original_path / path if original_path else hydra.utils.to_absolute_path(path))
 
 
 def fix_seeds(seed=1337):
@@ -87,7 +90,7 @@ def ctc_decode(seq: torch.Tensor, blank_idx: int):
     return seq
 
 
-def get_texts(utterances, logprobs, bpe: yttm.BPE, blank_idx) -> Tuple[List[str], List[str]]:
+def get_texts(utterances, logprobs, bpe: core.transforms.BPETransform, blank_idx) -> Tuple[List[str], List[str]]:
     """
     Get utterances and logprobs, ctc decode, remove padding, bpe decode and return texts
     :param utterances: bpe encoded utterances from dataset
@@ -98,6 +101,6 @@ def get_texts(utterances, logprobs, bpe: yttm.BPE, blank_idx) -> Tuple[List[str]
     """
     true_tokens = [np.trim_zeros(utt.tolist()) for utt in utterances]
     pred_tokens = [np.trim_zeros(ctc_decode(prob, blank_idx).tolist()) for prob in logprobs]
-    true_texts = [coded[0] if len(coded) > 0 else "" for coded in [bpe.decode(true) for true in true_tokens]]
-    pred_texts = [coded[0] if len(coded) > 0 else "" for coded in [bpe.decode(pred) for pred in pred_tokens]]
+    true_texts = [coded[0] if len(coded) > 0 else "" for coded in [bpe.bpe.decode(true) for true in true_tokens]]
+    pred_texts = [coded[0] if len(coded) > 0 else "" for coded in [bpe.bpe.decode(pred) for pred in pred_tokens]]
     return true_texts, pred_texts
