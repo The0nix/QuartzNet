@@ -15,7 +15,7 @@ To launch training follow these instructions:
 1. Set preferred configurations in `config/config.yaml`. In particular you might want to set `dataset`: it can be either `numbers` or `librispeech`
 2. In `docker-run.sh` change `memory`, `memory-swap`, `shm-size`, `cpuset-cpus`, `gpus`, and data `volume` to desired values
 3. Set WANDB_API_KEY environment variable to your wandb key
-4. Run `./docker-run.sh`
+4. Run `./docker-train.sh`
 
 All outputs including models will be saved to `outputs` dir.
 
