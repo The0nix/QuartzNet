@@ -6,7 +6,7 @@ Implementation of QuartzNet ASR model in PyTorch
 ### Setup
 To launch and inference in nvidia-docker container follow these instructions:
 
-0. Install [nvidia-docker]([https://github.com/NVIDIA/nvidia-docker])
+0. Install [nvidia-docker](https://github.com/NVIDIA/nvidia-docker)
 1. Run `./docker-build.sh`
 
 ### Training
