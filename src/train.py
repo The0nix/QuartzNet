@@ -134,6 +134,7 @@ def train(rank, cfg: DictConfig, original_path: Path):
                                                                   scaler, train=True, device=device)
 
             if rank == 0 and batch_idx % cfg.wandb.log_interval == 0:
+                # Save all logs
                 true_texts, pred_texts = core.utils.get_texts(utterances, logprobs, utterance_transform, cfg.bpe.vocab_size)
                 wer = jiwer.wer(true_texts, pred_texts)
                 cer = jiwer.wer([" ".join(t.replace(" ", "*")) for t in true_texts],
