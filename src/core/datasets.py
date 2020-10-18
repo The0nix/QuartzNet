@@ -31,6 +31,7 @@ class LIBRISPEECH(torchaudio.datasets.LIBRISPEECH):
     torchaudio.datasets.LIBRISPEECH wrapper to pass transforms
     """
     def __init__(self, waveform_transform=None, utterance_transform=None, *args, **kwargs):
+        os.makedirs(args[0] if len(args) else kwargs["root"], exist_ok=True)
         super().__init__(url="train-clean-100", download=True, *args, **kwargs)
         self.waveform_transform = waveform_transform
         self.utterance_transform = utterance_transform
