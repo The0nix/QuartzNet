@@ -32,6 +32,6 @@ Where:
 Predicted output will be printed to stdout and saved into a file in `inferenced` folder
 
 ## Pretrained models
-My currently best model trained on librispeech can be downloaded [here](https://drive.google.com/file/d/1fZ5PdzoiXUKVeteA6T1TcGIlnpxFsJHm/view?usp=sharing) and the repsective config [here](https://drive.google.com/file/d/1Wik28YUI0e1d7xcZ4qXpx-6qBfzg45zx/view?usp=sharing).
+My currently best model trained on librispeech and the respective config can be downloaded [here](https://drive.google.com/drive/folders/1sOEUeHY_KlZY6BNYfJtM6RyKFwNFwFSg?usp=sharing).
 
-It is not very good however bacause I only trained it to ~60 WER on librispeech 
+It is not very good however because I only trained it to ~60 WER on librispeech 
