@@ -77,10 +77,8 @@ def train(rank, cfg: DictConfig, original_path: Path):
                                      Rs=cfg.model.repeats,
                                      Ss=cfg.model.block_repeats).to(device)
     if cfg.model.path is not None:
-        quartznet.load_state_dict(torch.load(original_path / cfg.model.path))
+        quartznet.load_state_dict(torch.load(original_path / cfg.model.path, map_location="cpu"))
     quartznet = nn.parallel.DistributedDataParallel(quartznet, device_ids=[gpu_id])
-
-    # Load BPE encoder from disk
 
     # Create transforms
     waveform_transforms = core.utils.get_waveform_transforms(cfg.waveform_transforms)
@@ -127,6 +125,7 @@ def train(rank, cfg: DictConfig, original_path: Path):
     # Start training
     wandb.init(project=cfg.wandb.project, tags=[cfg.dataset.name])
     wandb.watch(quartznet, log="all", log_freq=cfg.wandb.log_interval)
+    wandb.save(original_path / "config/config.yaml")
     for epoch_idx in trange(cfg.training.start_epoch or 0, cfg.training.n_epochs, desc="Epoch"):
         # Train part
         quartznet.train()
@@ -150,7 +149,8 @@ def train(rank, cfg: DictConfig, original_path: Path):
                     "train_examples": wandb.Table(columns=['GT', 'Prediction'], data=zip(true_texts, pred_texts)),
                 }, step=step)
                 # Save the model
-                torch.save(quartznet.state_dict(), MODEL_PATH)
+                torch.save(quartznet.module.state_dict(), MODEL_PATH)
+                wandb.save(MODEL_PATH)
         scheduler.step()
 
         # Eval part
