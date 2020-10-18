@@ -7,11 +7,11 @@ common:
 distributed:
   gpus: [0]
 model:
-  path: "outputs/2020-10-16/08-55-04/model.pth"  # Path to saved model to continue training
+  path:   # Path to saved model to continue training
   channels: [256, 256, 512, 512, 512]  # C in paper
   kernels: [33, 39, 51, 63, 75]        # K in paper
   repeats: [5, 5, 5, 5, 5]             # R in paper
-  block_repeats: [2, 2, 2, 2, 2]       # S in paper
+  block_repeats: [1, 1, 1, 1, 1]       # S in paper
 preprocessing:
   f_min: 0
   f_max: 8000
@@ -19,23 +19,23 @@ preprocessing:
   n_mels: 64
 training:
   n_epochs: 300
-  start_epoch: 82
-  lr: 5e-5
+  start_epoch:
+  lr: 1e-3
   num_workers: 6
-  batch_size: 100
+  batch_size: 90
 scheduler:
-  step_size: 30
-  gamma: 0.5
+  step_size: 60
+  gamma: 0.75
 waveform_transforms:
   - _target_: core.transforms.Resample
     orig_freq: ${dataset.original_sample_rate}
     new_freq: ${dataset.sample_rate}
   - _target_: core.transforms.ToNumpy
   - _target_: core.transforms.Squeeze
-#  - _target_: audiomentations.AddGaussianNoise
-#    min_amplitude: 0.001
-#    max_amplitude: 0.015
-#    p: 0.5
+  - _target_: audiomentations.AddGaussianNoise
+    min_amplitude: 0.001
+    max_amplitude: 0.015
+    p: 0.5
   - _target_: audiomentations.TimeStretch
     min_rate: 0.8
     max_rate: 1.25
@@ -44,6 +44,10 @@ waveform_transforms:
     min_semitones: -4
     max_semitones: 4
     p: 0.5
+#  - _target_: audiomentations.Shift
+#    min_fraction: -0.5
+#    max_fraction: 0.5
+#    p: 0.5
   - _target_: core.transforms.MelSpectrogram
     sample_rate: ${dataset.sample_rate}
     f_min: ${preprocessing.f_min}
@@ -62,3 +66,7 @@ lengths:
 wandb:
   project: "QuartzNet-Tamerlan-Tabolov"
   log_interval: 10
+inference:
+  model_path: ???  # Path to .pth model file
+  device: ???      # Device to inference on: 'cpu', 'cuda' or cuda device number
+  file: ???        # Path to input audio file to parse text from
