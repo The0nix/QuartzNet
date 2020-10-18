@@ -1,4 +1,4 @@
 docker build \
 	--file Dockerfile \
-	--tag quartznet \
+	--tag quartznet-tamerlan-tabolov \
 	.

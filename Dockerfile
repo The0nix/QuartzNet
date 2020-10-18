@@ -35,6 +35,10 @@ RUN ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
 # Version downgrading available via requirements.txt
 RUN . ~/.bashrc && conda install pytorch torchvision cudatoolkit=10.2 -c pytorch
 
+# Set timezone
+ENV TZ=Europe/Moscow
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # Requirements
 COPY requirements.txt /root/requirements.txt
 RUN . ~/.bashrc && pip install -r /root/requirements.txt

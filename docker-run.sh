@@ -10,4 +10,4 @@ docker run \
 	--volume $(pwd)/outputs:/home/user/outputs \
 	--volume $(pwd)/files:/home/user/files \
 	-e WANDB_API_KEY=$WANDB_API_KEY \
-	quartznet
+	quartznet-tamerlan-tabolov
