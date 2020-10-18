@@ -15,7 +15,9 @@ class MelSpectrogram(torchaudio.transforms.MelSpectrogram):
         super().__init__(*args, **kwargs)
 
     def forward(self, samples: Union[np.ndarray, torch.Tensor], sample_rate: int) -> torch.Tensor:
-        return super(MelSpectrogram, self).forward(torch.tensor(samples))
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.tensor(samples)
+        return super(MelSpectrogram, self).forward(samples)
 
 
 class Resample(torchaudio.transforms.Resample):
@@ -37,14 +39,6 @@ class BPETransform:
     def __init__(self, model_path: str):
         self.model_path = model_path
         self.bpe = yttm.BPE(model=self.model_path)
-
-        # def bpe_reduce(self):
-        #     return (
-        #         self.__class__,
-        #         (str(model_path),),
-        #     )
-        #
-        # yttm.BPE.__reduce__ = bpe_reduce
 
     def __call__(self, utterance):
         return torch.tensor(self.bpe.encode(utterance))

@@ -69,4 +69,5 @@ wandb:
 inference:
   model_path: ???  # Path to .pth model file
   device: ???      # Device to inference on: 'cpu', 'cuda' or cuda device number
+  bpe_path: ???    # Path to yttm bpe model .model file
   file: ???        # Path to input audio file to parse text from

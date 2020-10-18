@@ -1,6 +1,7 @@
 tmp_dir=$(mktemp -d -t inference-XXXXXXXXXX)
 cp $1 $tmp_dir  # Copy model into temp for docker
-cp $3 $tmp_dir  # Copy input file
+cp $3 $tmp_dir  # Copy bpe model
+cp $4 $tmp_dir  # Copy input file
 
 docker run \
 	-it \
@@ -22,6 +23,7 @@ docker run \
     python ./src/inference.py \
     +inference.model_path=inference_files/$(basename $1) \
     +inference.device=$2 \
-    +inference.file=inference_files/$(basename $3)
+    +inference.bpe_path=inference_files/$(basename $3) \
+    +inference.file=inference_files/$(basename $4)
 	"
 rm -rf $tmp_dir
