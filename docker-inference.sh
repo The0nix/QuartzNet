@@ -19,7 +19,6 @@ docker run \
 	quartznet-tamerlan-tabolov \
 	bash -c "
 	  export PATH=\"/root/anaconda3/bin:'$PATH'\" && \
-	  python ./src/scripts/train_bpe.py && \
     python ./src/inference.py \
     +inference.model_path=inference_files/$(basename $1) \
     +inference.device=$2 \
