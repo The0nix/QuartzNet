@@ -125,7 +125,7 @@ def train(rank, cfg: DictConfig, original_path: Path):
     # Start training
     wandb.init(project=cfg.wandb.project, tags=[cfg.dataset.name])
     wandb.watch(quartznet, log="all", log_freq=cfg.wandb.log_interval)
-    wandb.save(original_path / "config/config.yaml")
+    wandb.save(str(original_path / "config/config.yaml"))
     for epoch_idx in trange(cfg.training.start_epoch or 0, cfg.training.n_epochs, desc="Epoch"):
         # Train part
         quartznet.train()
